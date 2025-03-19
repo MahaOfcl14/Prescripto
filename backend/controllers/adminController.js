@@ -1,85 +1,73 @@
 import validator from "validator";
-import bycrypt from "bcrypt";
-import {v2 as cloudinary} from 'cloudinary'
+import bcrypt from "bcrypt";  
+import { v2 as cloudinary } from "cloudinary";
 import doctorModel from "../models/doctorModel.js";
-//API for adding doc
+import jwt from "jsonwebtoken";
 
+// API for adding doctor
 const addDoctor = async (req, res) => {
   try {
-    const {
+    console.log("Received file:", req.file); // Debugging log
+
+    const { name, email, password, speciality, degree, experience, about, fees, address } = req.body;
+
+    if (!name || !email || !password || !speciality || !degree || !experience || !about || !fees || !address) {
+      return res.json({ success: false, message: "Missing details" });
+    }
+
+    if (!req.file) {
+      return res.json({ success: false, message: "Image file is required" });
+    }
+
+    console.log("Uploading image to Cloudinary..."); // Debugging log
+    const imageUpload = await cloudinary.uploader.upload(req.file.path, { resource_type: "image" });
+    console.log("Image uploaded:", imageUpload.secure_url); // Debugging log
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const parsedAddress = typeof address === "string" && address.startsWith("{") ? JSON.parse(address) : address;
+
+    const newDoctor = new doctorModel({
       name,
       email,
-      password,
+      image: imageUpload.secure_url,
+      password: hashedPassword,
       speciality,
       degree,
       experience,
       about,
       fees,
-      address,
-    } = req.body;
-    const imageFile = req.file;
+      address: parsedAddress,
+      date: Date.now(),
+    });
 
-    //checking for all data to add doctor
-
-    if (
-      !name ||
-      !email ||
-      !password ||
-      !speciality ||
-      !degree ||
-      !experience ||
-      !about ||
-      !fees ||
-      !address ||
-      !imageFile
-    ) {
-      return res.json({ success: false, message: "Missing details" });
-    }
-
-    //validate eamil
-    if (!validator.isEmail(email)) {
-      return response.json({ success: false, message: "Invalid email" });
-    }
-    //valid password
-    if (password.length < 8) {
-      return response.json({
-        success: false,
-        message: "Enter a strong password",
-      });
-    }
-     //encrypt password
-    //hashing doctor password
-    const salt = await bycrypt.genSalt(10);
-    const hashedPassword = await bycrypt.hash(password, salt);
-
-    //upload image to cloudinary
-    const imageUpload = await cloudinary.uploader.upload(imageFile.path, {resource_type: 'image'})
-   const imageUrl = imageUpload.secure_url
-
-   //save to db
-   const doctorData = {
-    name,
-    email,
-    image: imageUrl,
-    password: hashedPassword,
-    speciality,
-    degree,
-    experience,
-    about,
-    fees,
-    address:JSON.parse(address),
-    date:Date.now()
-   }
-
-   const newDoctor = new doctorModel(doctorData)
-   await newDoctor.save()
-   res.json({success: true, message: "Doctor added successfully"})
+    await newDoctor.save();
+    res.json({ success: true, message: "Doctor added successfully" });
 
   } catch (error) {
-    console.log(error);
+    console.error("Error in addDoctor:", error);
     res.json({ success: false, message: error.message });
-    
   }
 };
 
-export { addDoctor };
+
+// API for Admin Login
+const loginAdmin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+      // ✅ Sign token securely
+      const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: "1d" });
+
+      res.json({ success: true, token });
+    } else {
+      res.json({ success: false, message: "Invalid credentials" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.json({ success: false, message: error.message });
+  }
+};
+
+export { addDoctor, loginAdmin };
